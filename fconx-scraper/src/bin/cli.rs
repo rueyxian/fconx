@@ -1,23 +1,17 @@
-// ===============================================
-// ===============================================================================================
-
-use std::path;
-
 use anyhow::Result;
+use fconx_scraper::rw::RWMp3;
 use tokio::sync::broadcast;
 
 use fconx_scraper::config::Config;
 use fconx_scraper::config::Series;
+use fconx_scraper::downloader;
 use fconx_scraper::rw::RWJson;
 use fconx_scraper::scraper;
 
-// ===============================================================================================
-
+///
 #[tokio::main]
 async fn main() -> Result<()> {
     let (shutdown_send, mut shutdown_recv) = broadcast::channel::<()>(256);
-
-    // ========================
 
     {
         let shutdown_send = shutdown_send.clone();
@@ -38,56 +32,58 @@ async fn main() -> Result<()> {
         });
     }
 
-    // ========================
-
     run(shutdown_send.clone()).await?;
 
     // if Err(e) = run(shutdown_send.clone()).await {
     //     return e;
     // };
 
-    // ========================
-
     shutdown_recv.recv().await.unwrap();
 
-    // ========================
-
-    println!("bye~");
+    println!("bye");
     Ok(())
 }
 
-// ===============================================================================================
-
+///
 async fn run(shutdown_send: broadcast::Sender<()>) -> Result<()> {
-
     let config = config().create_dirs();
-    let json_rw = RWJson::new_arc(config.rc_clone());
+    let rw_json = RWJson::new_arc(config.rc_clone());
+    let rw_mp3 = RWMp3::new_arc(config.rc_clone(), 256);
 
-    let scraper = scraper::Scraper::new(32, config.series_vec(), json_rw);
+    let scraper = scraper::Scraper::new(16, config.series_vec(), rw_json.arc_clone());
     scraper.run().await?;
-
     println!("scraping is done");
+
+    let downloader = downloader::Downloader::new(
+        16,
+        config.series_vec(),
+        rw_json.arc_clone(),
+        rw_mp3.arc_clone(),
+    );
+    downloader.run().await?;
+    println!("download is done");
+
     shutdown_send.send(()).unwrap();
 
     Ok(())
 }
 
-// ===============================================================================================
-
+///
 fn config() -> std::rc::Rc<Config> {
-    let homedir = std::env::var("HOME").unwrap();
-    let dir_path = path::Path::new(&homedir);
-    let dir_path = dir_path.join("Music/fconx/");
+    let dir_path = {
+        let homedir = std::env::var("HOME").unwrap();
+        let dir_path = std::path::Path::new(&homedir);
+        dir_path.join("Music/fconx/")
+    };
 
     let series_vec = vec![
         // Series::FR,
-        // Series::NSQ,
+        Series::NSQ,
         // Series::PIMA,
         // Series::FMD,
-        Series::OL,
+        // Series::OL,
     ];
 
     Config::new_rc(dir_path, series_vec)
 }
 
-// ===============================================================================================
