@@ -1,6 +1,5 @@
-
+mod chrome;
 mod scraper;
 
-pub use scraper::Scraper;
 
-
+pub use crate::scraper::scraper::Scraper;

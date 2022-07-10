@@ -1,4 +1,4 @@
-use anyhow::Result;
+// use anyhow::Result;
 use fconx_scraper::rw::RWMp3;
 use tokio::sync::broadcast;
 
@@ -7,6 +7,9 @@ use fconx_scraper::config::Series;
 use fconx_scraper::downloader;
 use fconx_scraper::rw::RWJson;
 use fconx_scraper::scraper;
+
+///
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 ///
 #[tokio::main]
@@ -50,7 +53,7 @@ async fn run(shutdown_send: broadcast::Sender<()>) -> Result<()> {
     let rw_json = RWJson::new_arc(config.rc_clone());
     let rw_mp3 = RWMp3::new_arc(config.rc_clone(), 256);
 
-    let scraper = scraper::Scraper::new(16, config.series_vec(), rw_json.arc_clone());
+    let scraper = scraper::Scraper::new(64, config.series_vec(), rw_json.arc_clone());
     scraper.run().await?;
     println!("scraping is done");
 
@@ -78,12 +81,11 @@ fn config() -> std::rc::Rc<Config> {
 
     let series_vec = vec![
         // Series::FR,
-        Series::NSQ,
+        // Series::NSQ,
         // Series::PIMA,
         // Series::FMD,
-        // Series::OL,
+        Series::OL,
     ];
 
     Config::new_rc(dir_path, series_vec)
 }
-

@@ -83,9 +83,10 @@ impl Downloader {
     pub async fn download(&self, episodes: Vec<Episode>) -> anyhow::Result<()> {
         // TODO: Refector the code:
         // break it down to Job Struct and Worker struct.
+        let episodes_count = episodes.len();
         let episodes_mutex = std::sync::Arc::new(tokio::sync::Mutex::new(episodes));
         let mut handles = Vec::<tokio::task::JoinHandle<()>>::with_capacity(self.max_worker);
-        for _ in 0..self.max_worker {
+        for _ in 0..usize::min(self.max_worker, episodes_count) {
             let episodes_mutex = std::sync::Arc::clone(&episodes_mutex);
             let rw_mp3 = self.rw_mp3.arc_clone();
             let rw_json = self.rw_json.arc_clone();

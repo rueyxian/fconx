@@ -1,10 +1,9 @@
-use anyhow::anyhow;
-use anyhow::Result;
-use futures::StreamExt;
-
 use crate::config::Series;
 use crate::episode::Episode;
 use crate::rw::RWJson;
+
+///
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
 
 ///
 pub struct Scraper {
@@ -31,7 +30,7 @@ impl Scraper {
     ///
     pub async fn run(self) -> Result<()> {
         let episodes = self.scan_unscraped_episodes().await?;
-        self.scrape(episodes).await?;
+        self.scrape_download_urls(episodes).await?;
         Ok(())
     }
 
@@ -41,12 +40,12 @@ impl Scraper {
             let v = Some(Vec::<Episode>::new());
             std::sync::Arc::new(parking_lot::Mutex::new(v))
         };
-        let mut handles = Vec::<tokio::task::JoinHandle<Result<(), anyhow::Error>>>::with_capacity(
-            self.series_vec.len(),
-        );
+        let mut handles =
+            Vec::<tokio::task::JoinHandle<Result<()>>>::with_capacity(self.series_vec.len());
         for &series in self.series_vec.iter() {
             let out_mutex = std::sync::Arc::clone(&out_mutex);
             let json_rw = self.rw_json.arc_clone();
+
             let h = tokio::spawn(async move {
                 let scraped = json_rw.read_all_episode(&series).unwrap();
                 let all = Scraper::scrape_page_urls(series).await?;
@@ -61,11 +60,12 @@ impl Scraper {
                     out.append(&mut to_scraped);
                 }
 
-                Ok::<(), anyhow::Error>(())
+                Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
             });
             handles.push(h);
         }
         for h in handles {
+            // h.await.unwrap()?;
             h.await.unwrap()?;
         }
         let out = {
@@ -76,67 +76,84 @@ impl Scraper {
     }
 
     ///
-    async fn scrape_download_url(episode: &mut Episode) -> Result<()> {
-        let config = chromiumoxide::BrowserConfig::builder()
-            // .with_head()
-            .build()
-            .map_err(|e| anyhow!(e))?;
-        let (browser, mut handler) = chromiumoxide::Browser::launch(config)
-            .await
-            .map_err(|e| anyhow!(e))?;
+    async fn scrape_page_urls(series: Series) -> Result<Vec<Episode>> {
+        let browser = {
+            let opts = headless_chrome::LaunchOptionsBuilder::default()
+                // .headless(false)
+                .idle_browser_timeout(std::time::Duration::from_millis(10_000))
+                .build()?;
+            headless_chrome::Browser::new(opts)?
+        };
 
-        let addr = browser.websocket_address();
-        let port = &addr[15..addr.find("/devtools").unwrap()];
-        println!(
-            "port {} scraping {:?} {}",
-            port,
-            episode.series(),
-            episode.page_url()
-        );
+        let tab = browser.wait_for_initial_tab()?;
+        tab.navigate_to(&series.url().to_string())?;
+        let elems = tab.wait_for_elements(".archive_entry").unwrap();
 
-        let close_handler = std::sync::Arc::new(parking_lot::Mutex::new(false));
-        let handle = {
-            let close_handler = std::sync::Arc::clone(&close_handler);
-            async_std::task::spawn(async move {
-                loop {
-                    if *close_handler.lock() == true {
-                        break;
+        let mut out = Vec::<Episode>::with_capacity(elems.len());
+
+        let episode_num_sel = scraper::Selector::parse(".episode_number a").unwrap();
+        let entry_content_sel = scraper::Selector::parse(".entry_content a").unwrap();
+        let date_sel = scraper::Selector::parse(".date").unwrap();
+
+        for elem in elems {
+            let html = {
+                // https://github.com/atroche/rust-headless-chrome/issues/73
+                let remote_obj = elem
+                    .call_js_fn("function() { return this.innerHTML; }", true)
+                    .unwrap();
+                let html_str = remote_obj.value.unwrap().to_owned().to_string();
+                let html_str = html_str.replace("\\\"", "\"");
+                scraper::Html::parse_fragment(html_str.as_str())
+            };
+
+            let number = {
+                if let Some(elem_ref) = html.select(&episode_num_sel).next() {
+                    let number_raw = elem_ref.text().next().unwrap();
+                    let number_str = number_raw.trim_start_matches("No. ");
+                    if let Ok(number) = number_str.parse::<usize>() {
+                        format!("{:04}", number)
+                    } else {
+                        number_str.to_string()
                     }
-                    let _event = handler.next().await.unwrap();
+                } else {
+                    continue;
                 }
-            })
-        };
+            };
 
-        let page = browser.new_page(episode.page_url()).await?;
+            let (title, page_url) = {
+                if let Some(elem_ref) = html.select(&entry_content_sel).next() {
+                    let title = elem_ref.text().next().unwrap();
+                    let url = elem_ref.value().attr("href").unwrap();
+                    (title.to_string(), url.to_string())
+                } else {
+                    continue;
+                }
+            };
 
-        let download_url = {
-            let url = page
-                .find_element(".download>a")
-                .await?
-                .attribute("href")
-                .await?
-                .unwrap();
-            // let truncated_url = &url[..url.rfind(".mp3").unwrap() + 4];
-            let truncated_url = &url[..url.find(".mp3").unwrap() + 4];
-            truncated_url.to_string()
-        };
+            let date = {
+                if let Some(elem_ref) = html.select(&date_sel).next() {
+                    let date_str = elem_ref.text().next().unwrap();
+                    chrono::NaiveDate::parse_from_str(&date_str, "%m/%d/%y").unwrap()
+                } else {
+                    continue;
+                }
+            };
 
-        episode.set_download_url(download_url);
+            let episode = Episode::new(series, number, title, date, page_url);
+            out.push(episode);
+        }
 
-        drop(browser);
-        *close_handler.lock() = true;
-        handle.await;
-
-        Ok(())
+        Ok(out)
     }
 
     ///
-    pub async fn scrape(&self, episodes: Vec<Episode>) -> Result<()> {
+    pub async fn scrape_download_urls(&self, episodes: Vec<Episode>) -> Result<()> {
         // TODO parking_lot::Mutex or tokio::sync::Mutex?????
+        let episodes_count = episodes.len();
         let episodes_mutex = std::sync::Arc::new(tokio::sync::Mutex::new(episodes));
         let mut handles_out = Vec::<tokio::task::JoinHandle<()>>::with_capacity(self.max_worker);
 
-        for _ in 0..self.max_worker {
+        for _ in 0..usize::min(self.max_worker, episodes_count) {
             let episodes_mutex = std::sync::Arc::clone(&episodes_mutex);
             let rw_json = self.rw_json.arc_clone();
             let h = tokio::spawn(async move {
@@ -166,70 +183,25 @@ impl Scraper {
     }
 
     ///
-    async fn scrape_page_urls(series: Series) -> Result<Vec<Episode>> {
-        // TODO refactor the code: make a Chrome struct that scrape download url
-        // Use channel to pass Episode around instead of Arc + Mutex
-        let config = chromiumoxide::BrowserConfig::builder()
-            // .with_head()
-            .build()
-            .map_err(|e| anyhow!(e))?;
-        let (browser, mut handler) = chromiumoxide::Browser::launch(config)
-            .await
-            .map_err(|e| anyhow!(e))?;
+    async fn scrape_download_url(episode: &mut Episode) -> Result<()> {
+        let browser = headless_chrome::Browser::default()?;
 
-        let close_handler = std::sync::Arc::new(parking_lot::Mutex::new(false));
-        let handle = {
-            let close_handler = std::sync::Arc::clone(&close_handler);
-            async_std::task::spawn(async move {
-                loop {
-                    if *close_handler.lock() == true {
-                        break;
-                    }
-                    let _event = handler.next().await.unwrap();
-                }
-            })
+        let tab = browser.wait_for_initial_tab()?;
+
+        tab.navigate_to(episode.page_url())?;
+
+        println!("scraping: {:?} {}", episode.series(), episode.page_url());
+
+        let download_url = {
+            let elem = tab.wait_for_element(".download > a").unwrap();
+            let attrs = elem.get_attributes().unwrap().unwrap();
+            let url = attrs.get("href").unwrap();
+            let truncated_url = &url[..url.find(".mp3").unwrap() + 4];
+            truncated_url.to_string()
         };
 
-        let page = browser.new_page(series.url()).await?;
-        let elems = page.find_elements(".archive_entry").await?;
-        let mut out = Vec::<Episode>::with_capacity(elems.len());
+        episode.set_download_url(download_url);
 
-        for elem in elems {
-            let number = if let Ok(a) = elem.find_element(".episode_number a").await {
-                let number_raw = a.inner_text().await.unwrap().unwrap();
-                let number_str = number_raw.trim_start_matches("NO. ");
-                if let Ok(number) = number_str.parse::<usize>() {
-                    format!("{:04}", number)
-                } else {
-                    number_str.to_string()
-                }
-            } else {
-                continue;
-            };
-
-            let (title, page_url) = if let Ok(a) = elem.find_element(".entry_content a").await {
-                let title = a.inner_text().await.unwrap().unwrap();
-                let url = a.attribute("href").await.unwrap().unwrap();
-                (title, url)
-            } else {
-                continue;
-            };
-
-            let date = if let Ok(div) = elem.find_element(".date").await {
-                let date_str = div.inner_text().await.unwrap().unwrap();
-                chrono::NaiveDate::parse_from_str(&date_str, "%m/%d/%y").unwrap()
-            } else {
-                continue;
-            };
-
-            let episode = Episode::new(series, number, title, date, page_url);
-            out.push(episode);
-        }
-
-        drop(browser);
-        *close_handler.lock() = true;
-        handle.await;
-
-        Ok(out)
+        Ok(())
     }
 }
