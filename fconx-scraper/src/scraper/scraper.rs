@@ -5,11 +5,10 @@ use crate::rw::RWJson;
 ///
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-
 ///
 pub struct Scraper {
     max_worker: usize,
-    series_vec: std::rc::Rc<Vec<Series>>,
+    series_vec: std::sync::Arc<Vec<Series>>,
     rw_json: std::sync::Arc<RWJson>,
 }
 
@@ -18,7 +17,7 @@ impl Scraper {
     ///
     pub fn new(
         max_worker: usize,
-        series_vec: std::rc::Rc<Vec<Series>>,
+        series_vec: std::sync::Arc<Vec<Series>>,
         rw_json: std::sync::Arc<RWJson>,
     ) -> Scraper {
         Scraper {
@@ -166,8 +165,15 @@ impl Scraper {
                         episodes_mutex.lock().await.pop() // drop the guard immediately
                     };
                     if let Some(mut episode) = episode {
-                        while let Err(err) = Scraper::scrape_download_url(&mut episode).await {
-                            println!("SCRAPE FAIL: {:?}: {:?}", err, episode.page_url());
+                        if let Err(err) = Scraper::scrape_download_url(&mut episode).await {
+                            println!(
+                                "SCRAPE ERROR: {:?} {} {:?}: {:?}",
+                                episode.series(),
+                                episode.number(),
+                                episode.title(),
+                                err,
+                            );
+                            continue;
                         }
 
                         rw_json.push_episode(episode).unwrap();
@@ -201,12 +207,20 @@ impl Scraper {
             episode.page_url()
         );
 
+        fn try_truncate_url(url: &str) -> Option<String> {
+            let idx = url.find(".mp3")?;
+            let truncated = url.get(..idx)?;
+            Some(truncated.to_string())
+        }
+
         let download_url = {
-            let elem = tab.wait_for_element(".download > a").unwrap();
+            let elem = tab.wait_for_element(".download > a")?;
             let attrs = elem.get_attributes().unwrap().unwrap();
             let url = attrs.get("href").unwrap();
-            let truncated_url = &url[..url.find(".mp3").unwrap() + 4];
-            truncated_url.to_string()
+            match try_truncate_url(url) {
+                Some(truncated) => truncated,
+                None => url.to_string(),
+            }
         };
 
         episode.set_download_url(download_url);
@@ -214,3 +228,4 @@ impl Scraper {
         Ok(())
     }
 }
+

@@ -2,6 +2,10 @@ use serde::Deserialize;
 use serde::Serialize;
 use url::Url;
 
+#[derive(Debug)]
+pub struct ParseSeriesError(String);
+
+///
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Series {
     FR,
@@ -11,16 +15,15 @@ pub enum Series {
     OL,
 }
 
+///
 impl Series {
     const URL_FR: &'static str = "https://freakonomics.com/series-full/freakonomics-radio/";
     const URL_NSQ: &'static str = "https://freakonomics.com/series-full/nsq/";
     const URL_FMD: &'static str = "https://freakonomics.com/series-full/bapu/";
-    const URL_PIMA: &'static str =
-        "https://freakonomics.com/series-full//series-full/people-i-mostly-admire/";
+    const URL_PIMA: &'static str = "https://freakonomics.com/series-full/people-i-mostly-admire/";
     const URL_OL: &'static str = "https://freakonomics.com/series-full/off-leash/";
     // const URL_SBTI: &'static str =
     //     "https://freakonomics.com/series-full/sudhir-breaks-the-internet/";
-
 
     pub fn url(&self) -> Url {
         match self {
@@ -49,6 +52,22 @@ impl Series {
             Series::FMD => "Freakonomics MD".to_string(),
             Series::PIMA => "People I Mostly Admire".to_string(),
             Series::OL => "Off Leash".to_string(),
+        }
+    }
+}
+
+///
+impl TryFrom<String> for Series {
+    type Error = ParseSeriesError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "FR" => Ok(Series::FR),
+            "NSQ" => Ok(Series::NSQ),
+            "FMD" => Ok(Series::FMD),
+            "PIMA" => Ok(Series::PIMA),
+            "OL" => Ok(Series::OL),
+            _ => Err(ParseSeriesError(value)),
         }
     }
 }

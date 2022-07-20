@@ -13,7 +13,7 @@ pub struct RWJson {
 ///
 impl RWJson {
     ///
-    pub fn new_arc(config: &std::rc::Rc<Config>) -> std::sync::Arc<RWJson> {
+    pub fn new_arc(config: &std::sync::Arc<Config>) -> std::sync::Arc<RWJson> {
         let mut file_path_map = std::collections::HashMap::with_capacity(config.series_vec().len());
         for &series in config.series_vec().iter() {
             let file_path_mutex = {
@@ -29,7 +29,6 @@ impl RWJson {
     pub fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<RWJson> {
         std::sync::Arc::clone(&self)
     }
-
 
     ///
     fn overwrite_all_episode(

@@ -5,17 +5,18 @@ use crate::episode::Episode;
 ///
 #[derive(Debug)]
 pub struct RWMp3 {
+    config: std::sync::Arc<Config>,
     workers: usize,
     dir_path_map: std::collections::HashMap<Series, std::path::PathBuf>,
 }
 
 ///
 impl RWMp3 {
-    /// reference: https://stackoverflow.com/questions/2679699/what-characters-allowed-in-file-names-on-android
+    ///
     const RESERVED_FAT_FILENAME_CHARS: [char; 9] = ['"', '*', '/', ':', '<', '>', '?', '\\', '|'];
 
     ///
-    pub fn new_arc(config: &std::rc::Rc<Config>, workers: usize) -> std::sync::Arc<RWMp3> {
+    pub fn new_arc(config: &std::sync::Arc<Config>, workers: usize) -> std::sync::Arc<RWMp3> {
         let mut dir_path_map = std::collections::HashMap::with_capacity(config.series_vec().len());
         for &series in config.series_vec().iter() {
             let dir_name = series.mp3_dirname();
@@ -23,6 +24,7 @@ impl RWMp3 {
             dir_path_map.insert(series, dir_path);
         }
         let rw_mp3 = RWMp3 {
+            config: std::sync::Arc::clone(&config),
             workers,
             dir_path_map,
         };
@@ -35,8 +37,8 @@ impl RWMp3 {
     }
 
     ///
+    /// reference: https://stackoverflow.com/questions/2679699/what-characters-allowed-in-file-names-on-android
     fn get_filename(episode: &Episode) -> String {
-        let title = episode.title().replace("?", "");
         let title = episode
             .title()
             .chars()
@@ -52,12 +54,21 @@ impl RWMp3 {
         bytes: bytes::Bytes,
     ) -> anyhow::Result<()> {
         let mut reader = std::io::Cursor::new(bytes);
-        let mut writer = {
-            let dir_path = self.dir_path_map.get(&episode.series()).unwrap();
-            let file_name = RWMp3::get_filename(episode);
-            let file_path = dir_path.join(file_name);
-            tokio::fs::File::create(file_path).await.unwrap()
-        };
+
+        let file_name = RWMp3::get_filename(episode);
+        let dest_file_path = self
+            .dir_path_map
+            .get(&episode.series())
+            .unwrap()
+            .join(file_name.as_str());
+        let temp_file_path = self.config.temp_dir_path().join(file_name);
+
+        let mut writer = tokio::fs::File::create(temp_file_path.as_path())
+            .await
+            .unwrap();
+
+        std::fs::rename(temp_file_path, dest_file_path).unwrap();
+
         tokio::io::copy(&mut reader, &mut writer).await?;
         Ok(())
     }

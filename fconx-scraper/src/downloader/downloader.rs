@@ -9,7 +9,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 ///
 pub struct Downloader {
     max_worker: usize,
-    series_vec: std::rc::Rc<Vec<Series>>,
+    series_vec: std::sync::Arc<Vec<Series>>,
     rw_json: std::sync::Arc<RWJson>,
     rw_mp3: std::sync::Arc<RWMp3>,
 }
@@ -19,7 +19,7 @@ impl Downloader {
     ///
     pub fn new(
         max_worker: usize,
-        series_vec: std::rc::Rc<Vec<Series>>,
+        series_vec: std::sync::Arc<Vec<Series>>,
         rw_json: std::sync::Arc<RWJson>,
         rw_mp3: std::sync::Arc<RWMp3>,
     ) -> Downloader {
@@ -103,7 +103,22 @@ impl Downloader {
                         episodes_mutex.lock().await.pop() // drop the guard immediately
                     };
                     if let Some(mut episode) = episode {
-                        let bytes = Downloader::download_episode(&episode).await.unwrap();
+                        // let bytes = Downloader::download_episode(&episode).await.unwrap();
+                        let bytes = match Downloader::download_episode(&episode).await {
+                            Ok(b) => b,
+                            Err(err) => {
+                                println!(
+                                    "DOWNLOAD ERROR: {:?} {} {:?}: {:?}",
+                                    episode.series(),
+                                    episode.number(),
+                                    episode.title(),
+
+                                    err,
+                                );
+                                continue;
+                            }
+                        };
+
                         let sha1 = {
                             use crypto::digest::Digest;
                             let mut hasher = crypto::sha1::Sha1::new();
@@ -135,8 +150,10 @@ impl Downloader {
             episode.title()
         );
         let download_url = episode.download_url().unwrap();
-        let response = reqwest::get(download_url).await.unwrap();
-        let bytes = response.bytes().await.unwrap();
+        let bytes = {
+            let response = reqwest::get(download_url).await.unwrap();
+            response.bytes().await.unwrap()
+        };
         Ok(bytes)
     }
 }

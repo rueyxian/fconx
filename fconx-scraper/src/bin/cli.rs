@@ -3,7 +3,6 @@ use fconx_scraper::rw::RWMp3;
 use tokio::sync::broadcast;
 
 use fconx_scraper::config::Config;
-use fconx_scraper::config::Series;
 use fconx_scraper::downloader;
 use fconx_scraper::rw::RWJson;
 use fconx_scraper::scraper;
@@ -35,6 +34,7 @@ async fn main() -> Result<()> {
         });
     }
 
+
     run(shutdown_send.clone()).await?;
 
     // if Err(e) = run(shutdown_send.clone()).await {
@@ -43,14 +43,13 @@ async fn main() -> Result<()> {
 
     shutdown_recv.recv().await.unwrap();
 
-    println!("bye");
+    println!("poopaye~");
     Ok(())
 }
 
-
 ///
 async fn run(shutdown_send: broadcast::Sender<()>) -> Result<()> {
-    let config = config().create_dirs();
+    let config = Config::new_arc().create_dirs();
     let rw_json = RWJson::new_arc(&config);
     let rw_mp3 = RWMp3::new_arc(&config, 64);
 
@@ -72,21 +71,3 @@ async fn run(shutdown_send: broadcast::Sender<()>) -> Result<()> {
     Ok(())
 }
 
-///
-fn config() -> std::rc::Rc<Config> {
-    let dir_path = {
-        let homedir = std::env::var("HOME").unwrap();
-        let dir_path = std::path::Path::new(&homedir);
-        dir_path.join("Music/fconx/")
-    };
-
-    let series_vec = vec![
-        Series::FR,
-        // Series::NSQ,
-        // Series::PIMA,
-        // Series::FMD,
-        // Series::OL,
-    ];
-
-    Config::new_rc(dir_path, series_vec)
-}
