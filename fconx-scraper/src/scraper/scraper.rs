@@ -3,7 +3,8 @@ use crate::episode::Episode;
 use crate::rw::RWJson;
 
 ///
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
 
 ///
 pub struct Scraper {
@@ -29,8 +30,12 @@ impl Scraper {
 
     ///
     pub async fn run(self) -> Result<()> {
-        let episodes = self.scan_unscraped_episodes().await?;
-        self.scrape_download_urls(episodes).await?;
+        println!("================ scan unscraped episode ================");
+        let to_scrape = self.scan_unscraped_episodes().await?;
+        println!("{} episodes to scrape", to_scrape.len());
+        println!("================ start scraping  ================");
+        self.scrape_download_urls(to_scrape).await?;
+        println!("================ done scraping  ================");
         Ok(())
     }
 
@@ -47,7 +52,7 @@ impl Scraper {
             let json_rw = self.rw_json.arc_clone();
 
             let h = tokio::spawn(async move {
-                let scraped = json_rw.read_all_episode(&series).unwrap();
+                let scraped = json_rw.read_all_episodes(&series).unwrap();
                 let all = Scraper::scrape_page_urls(series).await?;
 
                 let mut to_scraped = all
@@ -65,7 +70,6 @@ impl Scraper {
             handles.push(h);
         }
         for h in handles {
-            // h.await.unwrap()?;
             h.await.unwrap()?;
         }
         let out = {
@@ -190,7 +194,12 @@ impl Scraper {
 
         tab.navigate_to(episode.page_url())?;
 
-        println!("scraping: {:?} {}", episode.series(), episode.page_url());
+        println!(
+            "scraping: {:?} {} {}",
+            episode.series(),
+            episode.number(),
+            episode.page_url()
+        );
 
         let download_url = {
             let elem = tab.wait_for_element(".download > a").unwrap();

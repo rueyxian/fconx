@@ -2,6 +2,7 @@ use crate::config::Series;
 
 ///
 pub struct Config {
+    // config_file_path: std::path::Buf,
     dir_path: std::rc::Rc<std::path::PathBuf>,
     data_dir_path: std::rc::Rc<std::path::PathBuf>,
     series_vec: std::rc::Rc<Vec<Series>>,
@@ -62,3 +63,4 @@ impl Config {
         std::rc::Rc::clone(&self.series_vec)
     }
 }
+

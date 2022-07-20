@@ -9,7 +9,7 @@ use fconx_scraper::rw::RWJson;
 use fconx_scraper::scraper;
 
 ///
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync + 'static>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 ///
 #[tokio::main]
@@ -47,24 +47,25 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+
 ///
 async fn run(shutdown_send: broadcast::Sender<()>) -> Result<()> {
     let config = config().create_dirs();
-    let rw_json = RWJson::new_arc(config.rc_clone());
-    let rw_mp3 = RWMp3::new_arc(config.rc_clone(), 256);
+    let rw_json = RWJson::new_arc(&config);
+    let rw_mp3 = RWMp3::new_arc(&config, 64);
 
-    let scraper = scraper::Scraper::new(64, config.series_vec(), rw_json.arc_clone());
+    let scraper = scraper::Scraper::new(32, config.series_vec(), rw_json.arc_clone());
     scraper.run().await?;
-    println!("scraping is done");
 
-    let downloader = downloader::Downloader::new(
-        16,
-        config.series_vec(),
-        rw_json.arc_clone(),
-        rw_mp3.arc_clone(),
-    );
-    downloader.run().await?;
-    println!("download is done");
+    {
+        let downloader = downloader::Downloader::new(
+            16,
+            config.series_vec(),
+            rw_json.arc_clone(),
+            rw_mp3.arc_clone(),
+        );
+        downloader.run().await?;
+    }
 
     shutdown_send.send(()).unwrap();
 
@@ -80,11 +81,11 @@ fn config() -> std::rc::Rc<Config> {
     };
 
     let series_vec = vec![
-        // Series::FR,
+        Series::FR,
         // Series::NSQ,
         // Series::PIMA,
         // Series::FMD,
-        Series::OL,
+        // Series::OL,
     ];
 
     Config::new_rc(dir_path, series_vec)

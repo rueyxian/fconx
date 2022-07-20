@@ -44,11 +44,11 @@ impl Series {
 
     pub fn mp3_dirname(&self) -> String {
         match self {
-            Series::FR => "freakonomics-radio".to_string(),
-            Series::NSQ => "no-stupid-question".to_string(),
-            Series::FMD => "freakonomics-md".to_string(),
-            Series::PIMA => "people-i-mostly-admire".to_string(),
-            Series::OL => "off-leash".to_string(),
+            Series::FR => "Freakonomics Radio".to_string(),
+            Series::NSQ => "No Stupid Question".to_string(),
+            Series::FMD => "Freakonomics MD".to_string(),
+            Series::PIMA => "People I Mostly Admire".to_string(),
+            Series::OL => "Off Leash".to_string(),
         }
     }
 }

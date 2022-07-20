@@ -11,8 +11,11 @@ pub struct RWMp3 {
 
 ///
 impl RWMp3 {
+    /// reference: https://stackoverflow.com/questions/2679699/what-characters-allowed-in-file-names-on-android
+    const RESERVED_FAT_FILENAME_CHARS: [char; 9] = ['"', '*', '/', ':', '<', '>', '?', '\\', '|'];
+
     ///
-    pub fn new_arc(config: std::rc::Rc<Config>, workers: usize) -> std::sync::Arc<RWMp3> {
+    pub fn new_arc(config: &std::rc::Rc<Config>, workers: usize) -> std::sync::Arc<RWMp3> {
         let mut dir_path_map = std::collections::HashMap::with_capacity(config.series_vec().len());
         for &series in config.series_vec().iter() {
             let dir_name = series.mp3_dirname();
@@ -33,7 +36,13 @@ impl RWMp3 {
 
     ///
     fn get_filename(episode: &Episode) -> String {
-        format!("{} - {}.mp3", episode.number(), episode.title())
+        let title = episode.title().replace("?", "");
+        let title = episode
+            .title()
+            .chars()
+            .filter(|c| !RWMp3::RESERVED_FAT_FILENAME_CHARS.contains(c))
+            .collect::<String>();
+        format!("{} - {}.mp3", episode.number(), title)
     }
 
     ///

@@ -4,6 +4,9 @@ use crate::rw::RWJson;
 use crate::rw::RWMp3;
 
 ///
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
+///
 pub struct Downloader {
     max_worker: usize,
     series_vec: std::rc::Rc<Vec<Series>>,
@@ -29,14 +32,18 @@ impl Downloader {
     }
 
     ///
-    pub async fn run(&self) -> anyhow::Result<()> {
-        let episode_vec = self.scan_undownloaded_episodes().await?;
-        self.download(episode_vec).await?;
+    pub async fn run(&self) -> Result<()> {
+        println!("================ scan undownloaded episode ================");
+        let to_download = self.scan_undownloaded_episodes().await?;
+        println!("{} episodes to download", to_download.len());
+        println!("================ start downloading  ================");
+        self.download(to_download).await?;
+        println!("================ done downloading  ================");
         Ok(())
     }
 
     ///
-    async fn scan_undownloaded_episodes(&self) -> anyhow::Result<Vec<Episode>> {
+    async fn scan_undownloaded_episodes(&self) -> Result<Vec<Episode>> {
         let out_mutex = {
             let v = Some(Vec::<Episode>::new());
             std::sync::Arc::new(parking_lot::Mutex::new(v))
@@ -47,7 +54,7 @@ impl Downloader {
             let rw_mp3 = self.rw_mp3.arc_clone();
             let rw_json = self.rw_json.arc_clone();
             let h = tokio::spawn(async move {
-                let all = rw_json.read_all_episode(&series).unwrap();
+                let all = rw_json.read_all_episodes(&series).unwrap();
                 let downloaded_sha1s = rw_mp3.read_mp3s_and_to_sha1(series).await.unwrap();
                 let mut undownloaded = all
                     .into_iter()
@@ -80,7 +87,7 @@ impl Downloader {
     }
 
     ///
-    pub async fn download(&self, episodes: Vec<Episode>) -> anyhow::Result<()> {
+    async fn download(&self, episodes: Vec<Episode>) -> Result<()> {
         // TODO: Refector the code:
         // break it down to Job Struct and Worker struct.
         let episodes_count = episodes.len();
@@ -120,9 +127,9 @@ impl Downloader {
     }
 
     ///
-    async fn download_episode(episode: &Episode) -> anyhow::Result<bytes::Bytes> {
+    async fn download_episode(episode: &Episode) -> Result<bytes::Bytes> {
         println!(
-            "download: {:?} {} - {}",
+            "downloading: {:?} {} - {}",
             episode.series(),
             episode.number(),
             episode.title()
