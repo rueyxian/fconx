@@ -1,9 +1,17 @@
-pub mod config;
+pub mod fconx;
 
-pub mod rw;
+pub(crate) mod config;
 
-pub mod scraper;
+pub(crate) mod hasher;
 
-pub mod episode;
+pub(crate) mod rw;
 
-pub mod downloader;
+pub(crate) mod scraper;
+
+pub(crate) mod episode;
+
+pub(crate) mod downloader;
+
+// ========================
+
+pub use crate::fconx::Fconx;

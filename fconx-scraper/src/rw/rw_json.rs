@@ -6,14 +6,14 @@ use crate::episode::Episode;
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 ///
-pub struct RWJson {
+pub(crate) struct RWJson {
     file_path_map: std::collections::HashMap<Series, parking_lot::Mutex<FilePath>>,
 }
 
 ///
 impl RWJson {
     ///
-    pub fn new_arc(config: &std::sync::Arc<Config>) -> std::sync::Arc<RWJson> {
+    pub(crate) fn new_arc(config: &std::sync::Arc<Config>) -> std::sync::Arc<RWJson> {
         let mut file_path_map = std::collections::HashMap::with_capacity(config.series_vec().len());
         for &series in config.series_vec().iter() {
             let file_path_mutex = {
@@ -26,12 +26,12 @@ impl RWJson {
     }
 
     ///
-    pub fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<RWJson> {
+    pub(crate) fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<RWJson> {
         std::sync::Arc::clone(&self)
     }
 
     ///
-    fn overwrite_all_episode(
+    pub fn overwrite_all_episodes(
         self: &std::sync::Arc<Self>,
         series: &Series,
         episodes: Vec<Episode>,
@@ -39,34 +39,50 @@ impl RWJson {
         let file_path_mutex = self.file_path_map.get(series).unwrap();
         file_path_mutex
             .lock()
-            .overwrite_all_episode(episodes)
+            .overwrite_all_episodes(episodes)
             .unwrap();
         Ok(())
     }
 
     ///
-    pub fn push_episode(self: &std::sync::Arc<Self>, episode: Episode) -> Result<()> {
+    pub(crate) fn push_episode(self: &std::sync::Arc<Self>, episode: Episode) -> Result<()> {
         let file_path_mutex = self.file_path_map.get(&episode.series()).unwrap();
         file_path_mutex.lock().push_episode(episode).unwrap();
         Ok(())
     }
 
     ///
-    pub fn read_all_episodes(self: &std::sync::Arc<Self>, series: &Series) -> Result<Vec<Episode>> {
+    pub(crate) fn read_all_episodes(
+        self: &std::sync::Arc<Self>,
+        series: &Series,
+    ) -> Result<Vec<Episode>> {
         let file_path_mutex = self.file_path_map.get(series).unwrap();
-        let episodes = file_path_mutex.lock().read_all_episode().unwrap();
+        let episodes = file_path_mutex.lock().read_all_episodes().unwrap();
         Ok(episodes)
     }
 
     ///
-    pub fn edit_episode(self: &std::sync::Arc<Self>, episode: Episode) -> Result<()> {
+    pub(crate) fn read_episodes_no_sha1(
+        self: &std::sync::Arc<Self>,
+        series: &Series,
+    ) -> Result<Vec<Episode>> {
+        let all_episodes = self.read_all_episodes(series)?;
+        let no_sha1_episodes = all_episodes
+            .into_iter()
+            .filter(|episode| episode.sha1().is_none())
+            .collect::<Vec<Episode>>();
+        Ok(no_sha1_episodes)
+    }
+
+    ///
+    pub(crate) fn edit_episode(self: &std::sync::Arc<Self>, episode: Episode) -> Result<()> {
         let series = episode.series();
         let all = self.read_all_episodes(&series).unwrap().into_iter();
         let mut filtered = all
             .filter(|ep| ep.id() != episode.id())
             .collect::<Vec<Episode>>();
         filtered.push(episode);
-        self.overwrite_all_episode(&series, filtered).unwrap();
+        self.overwrite_all_episodes(&series, filtered).unwrap();
         Ok(())
     }
 }
@@ -90,7 +106,7 @@ impl FilePath {
     }
 
     ///
-    fn overwrite_all_episode(&self, episodes: Vec<Episode>) -> Result<()> {
+    fn overwrite_all_episodes(&self, episodes: Vec<Episode>) -> Result<()> {
         use std::io::Write;
         let json_buf = serde_json::to_string_pretty(&episodes).unwrap();
         let mut file = std::fs::OpenOptions::new()
@@ -105,14 +121,14 @@ impl FilePath {
 
     ///
     fn push_episode(&self, episode: Episode) -> Result<()> {
-        let mut episodes = self.read_all_episode().unwrap();
+        let mut episodes = self.read_all_episodes().unwrap();
         episodes.push(episode);
-        self.overwrite_all_episode(episodes).unwrap();
+        self.overwrite_all_episodes(episodes).unwrap();
         Ok(())
     }
 
     ///
-    fn read_all_episode(&self) -> Result<Vec<Episode>> {
+    fn read_all_episodes(&self) -> Result<Vec<Episode>> {
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)

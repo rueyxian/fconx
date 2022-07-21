@@ -11,7 +11,8 @@ pub struct Episode {
     series: Series,
     number: String,
     title: String,
-    date: String,
+    #[serde(with = "string_serde_datetime")]
+    date: chrono::DateTime<chrono::Utc>,
     page_url: String,
     download_url: Option<String>,
 }
@@ -23,7 +24,7 @@ impl Episode {
         series: Series,
         number: String,
         title: String,
-        date: chrono::NaiveDate,
+        date: chrono::DateTime<chrono::Utc>,
         page_url: String,
     ) -> Episode {
         let id = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_DNS, page_url.to_string().as_bytes())
@@ -35,7 +36,7 @@ impl Episode {
             number,
             title,
             page_url,
-            date: date.to_string(),
+            date,
             download_url: None,
         }
     }
@@ -86,4 +87,29 @@ impl Episode {
     }
 }
 
-// ===============================================================================================
+mod string_serde_datetime {
+
+    ///
+    pub fn serialize<S>(
+        date: &chrono::DateTime<chrono::Utc>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(date.to_string().as_str())
+    }
+
+    ///
+    pub(crate) fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<chrono::DateTime<chrono::Utc>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use std::str::FromStr;
+        let dt_str: String = serde::Deserialize::deserialize(deserializer)?;
+        chrono::DateTime::<chrono::Utc>::from_str(dt_str.as_str())
+            .map_err(|_| serde::de::Error::custom("chrono::DateTime parsing error"))
+    }
+}

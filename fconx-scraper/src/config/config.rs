@@ -3,7 +3,7 @@ use crate::config::Series;
 
 ///
 #[derive(Debug)]
-pub struct Config {
+pub(crate) struct Config {
     dir_path: std::sync::Arc<std::path::PathBuf>,
     data_dir_path: std::sync::Arc<std::path::PathBuf>,
     temp_dir_path: std::sync::Arc<std::path::PathBuf>,
@@ -44,7 +44,7 @@ impl Config {
     }
 
     ///
-    pub fn new_arc() -> std::sync::Arc<Config> {
+    pub(crate) fn new_arc() -> std::sync::Arc<Config> {
         let config_model = Config::read_config_file();
 
         let data_dir_path = {
@@ -70,7 +70,7 @@ impl Config {
     }
 
     ///
-    pub fn create_dirs(self: std::sync::Arc<Config>) -> std::sync::Arc<Self> {
+    pub(crate) fn create_dirs(self: std::sync::Arc<Config>) -> std::sync::Arc<Self> {
         std::fs::create_dir_all(self.dir_path.as_path()).unwrap();
 
         // ../.data/
@@ -92,27 +92,27 @@ impl Config {
     }
 
     ///
-    pub fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<Config> {
+    pub(crate) fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<Config> {
         std::sync::Arc::clone(self)
     }
 
     ///
-    pub fn dir_path(self: &std::sync::Arc<Self>) -> std::sync::Arc<std::path::PathBuf> {
+    pub(crate) fn dir_path(self: &std::sync::Arc<Self>) -> std::sync::Arc<std::path::PathBuf> {
         std::sync::Arc::clone(&self.dir_path)
     }
 
     ///
-    pub fn data_dir_path(self: &std::sync::Arc<Self>) -> std::sync::Arc<std::path::PathBuf> {
+    pub(crate) fn data_dir_path(self: &std::sync::Arc<Self>) -> std::sync::Arc<std::path::PathBuf> {
         std::sync::Arc::clone(&self.data_dir_path)
     }
 
     ///
-    pub fn temp_dir_path(self: &std::sync::Arc<Self>) -> std::sync::Arc<std::path::PathBuf> {
+    pub(crate) fn temp_dir_path(self: &std::sync::Arc<Self>) -> std::sync::Arc<std::path::PathBuf> {
         std::sync::Arc::clone(&self.temp_dir_path)
     }
 
     ///
-    pub fn series_vec(self: &std::sync::Arc<Self>) -> std::sync::Arc<Vec<Series>> {
+    pub(crate) fn series_vec(self: &std::sync::Arc<Self>) -> std::sync::Arc<Vec<Series>> {
         std::sync::Arc::clone(&self.series_vec)
     }
 }

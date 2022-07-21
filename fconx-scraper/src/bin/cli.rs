@@ -1,11 +1,6 @@
 // use anyhow::Result;
-use fconx_scraper::rw::RWMp3;
 use tokio::sync::broadcast;
 
-use fconx_scraper::config::Config;
-use fconx_scraper::downloader;
-use fconx_scraper::rw::RWJson;
-use fconx_scraper::scraper;
 
 ///
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -34,7 +29,6 @@ async fn main() -> Result<()> {
         });
     }
 
-
     run(shutdown_send.clone()).await?;
 
     // if Err(e) = run(shutdown_send.clone()).await {
@@ -49,25 +43,13 @@ async fn main() -> Result<()> {
 
 ///
 async fn run(shutdown_send: broadcast::Sender<()>) -> Result<()> {
-    let config = Config::new_arc().create_dirs();
-    let rw_json = RWJson::new_arc(&config);
-    let rw_mp3 = RWMp3::new_arc(&config, 64);
+    let fconx = fconx_scraper::Fconx::new();
 
-    let scraper = scraper::Scraper::new(32, config.series_vec(), rw_json.arc_clone());
-    scraper.run().await?;
-
-    {
-        let downloader = downloader::Downloader::new(
-            16,
-            config.series_vec(),
-            rw_json.arc_clone(),
-            rw_mp3.arc_clone(),
-        );
-        downloader.run().await?;
-    }
+    fconx.scrape_episodes().await?;
+    fconx.scrape_download_url().await?;
+    fconx.download_mp3().await?;
 
     shutdown_send.send(()).unwrap();
 
     Ok(())
 }
-

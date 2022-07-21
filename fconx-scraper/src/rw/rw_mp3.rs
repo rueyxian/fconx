@@ -1,10 +1,12 @@
+
 use crate::config::Config;
 use crate::config::Series;
 use crate::episode::Episode;
+use crate::hasher::Sha1Hasher;
 
 ///
 #[derive(Debug)]
-pub struct RWMp3 {
+pub(crate) struct RWMp3 {
     config: std::sync::Arc<Config>,
     workers: usize,
     dir_path_map: std::collections::HashMap<Series, std::path::PathBuf>,
@@ -16,7 +18,7 @@ impl RWMp3 {
     const RESERVED_FAT_FILENAME_CHARS: [char; 9] = ['"', '*', '/', ':', '<', '>', '?', '\\', '|'];
 
     ///
-    pub fn new_arc(config: &std::sync::Arc<Config>, workers: usize) -> std::sync::Arc<RWMp3> {
+    pub(crate) fn new_arc(config: &std::sync::Arc<Config>, workers: usize) -> std::sync::Arc<RWMp3> {
         let mut dir_path_map = std::collections::HashMap::with_capacity(config.series_vec().len());
         for &series in config.series_vec().iter() {
             let dir_name = series.mp3_dirname();
@@ -32,7 +34,7 @@ impl RWMp3 {
     }
 
     ///
-    pub fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<RWMp3> {
+    pub(crate) fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<RWMp3> {
         std::sync::Arc::clone(&self)
     }
 
@@ -48,7 +50,7 @@ impl RWMp3 {
     }
 
     ///
-    pub async fn write_mp3(
+    pub(crate) async fn write_mp3(
         self: &std::sync::Arc<Self>,
         episode: &Episode,
         bytes: bytes::Bytes,
@@ -95,8 +97,7 @@ impl RWMp3 {
     }
 
     ///
-    // TODO: this process rather slow
-    pub async fn read_mp3s_and_to_sha1(
+    pub(crate) async fn read_mp3s_and_to_sha1(
         self: &std::sync::Arc<Self>,
         series: Series,
     ) -> anyhow::Result<Vec<String>> {
@@ -119,6 +120,7 @@ impl RWMp3 {
             let file_paths_mutex = std::sync::Arc::clone(&file_paths_mutex);
             let out_mutex = std::sync::Arc::clone(&out_mutex);
             let h = tokio::spawn(async move {
+                let mut hasher = Sha1Hasher::new();
                 loop {
                     let file_path = {
                         file_paths_mutex.lock().pop() // drop the guard immediately
@@ -131,14 +133,10 @@ impl RWMp3 {
                             .create(true)
                             .open(file_path.as_path())
                             .unwrap();
+
                         let mut buf = Vec::new();
                         file.read_to_end(&mut buf).unwrap();
-                        let sha1 = {
-                            use crypto::digest::Digest;
-                            let mut hasher = crypto::sha1::Sha1::new();
-                            hasher.input(&buf[..]);
-                            hasher.result_str()
-                        };
+                        let sha1 = hasher.create_sha1(&buf);
                         {
                             let mut out_guard = out_mutex.lock();
                             let out = out_guard.as_mut().unwrap();
