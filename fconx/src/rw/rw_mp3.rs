@@ -1,14 +1,20 @@
-
+use crate::canceller::Canceller;
 use crate::config::Config;
 use crate::config::Series;
 use crate::episode::Episode;
 use crate::hasher::Sha1Hasher;
+use crate::logger::Logger;
+
+///
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 ///
 #[derive(Debug)]
 pub(crate) struct RWMp3 {
+    logger: std::sync::Arc<Logger>,
+    canceller: std::sync::Arc<Canceller>,
     config: std::sync::Arc<Config>,
-    workers: usize,
+    thread_max: usize,
     dir_path_map: std::collections::HashMap<Series, std::path::PathBuf>,
 }
 
@@ -18,7 +24,12 @@ impl RWMp3 {
     const RESERVED_FAT_FILENAME_CHARS: [char; 9] = ['"', '*', '/', ':', '<', '>', '?', '\\', '|'];
 
     ///
-    pub(crate) fn new_arc(config: &std::sync::Arc<Config>, workers: usize) -> std::sync::Arc<RWMp3> {
+    pub(crate) fn new_arc(
+        logger: std::sync::Arc<Logger>,
+        canceller: std::sync::Arc<Canceller>,
+        config: &std::sync::Arc<Config>,
+        thread_max: usize,
+    ) -> std::sync::Arc<RWMp3> {
         let mut dir_path_map = std::collections::HashMap::with_capacity(config.series_vec().len());
         for &series in config.series_vec().iter() {
             let dir_name = series.mp3_dirname();
@@ -26,8 +37,10 @@ impl RWMp3 {
             dir_path_map.insert(series, dir_path);
         }
         let rw_mp3 = RWMp3 {
+            logger,
+            canceller,
             config: std::sync::Arc::clone(&config),
-            workers,
+            thread_max,
             dir_path_map,
         };
         std::sync::Arc::new(rw_mp3)
@@ -54,7 +67,7 @@ impl RWMp3 {
         self: &std::sync::Arc<Self>,
         episode: &Episode,
         bytes: bytes::Bytes,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         let mut reader = std::io::Cursor::new(bytes);
 
         let file_name = RWMp3::get_filename(episode);
@@ -100,7 +113,7 @@ impl RWMp3 {
     pub(crate) async fn read_mp3s_and_to_sha1(
         self: &std::sync::Arc<Self>,
         series: Series,
-    ) -> anyhow::Result<Vec<String>> {
+    ) -> Result<Vec<String>> {
         use std::io::Read;
 
         let (file_paths_mutex, file_count) = {
@@ -114,9 +127,10 @@ impl RWMp3 {
             std::sync::Arc::new(parking_lot::Mutex::new(v))
         };
 
-        let mut handles = Vec::with_capacity(self.workers);
+        let mut handles = Vec::with_capacity(self.thread_max);
 
-        for _ in 0..usize::min(self.workers, file_count) {
+        for idx in 0..usize::min(self.thread_max, file_count) {
+            let logger = self.logger.arc_clone();
             let file_paths_mutex = std::sync::Arc::clone(&file_paths_mutex);
             let out_mutex = std::sync::Arc::clone(&out_mutex);
             let h = tokio::spawn(async move {
@@ -126,7 +140,10 @@ impl RWMp3 {
                         file_paths_mutex.lock().pop() // drop the guard immediately
                     };
                     if let Some(file_path) = file_path {
-                        println!("found {:?} {:?}", series, file_path.file_name().unwrap());
+                        logger
+                            .log_existing_mp3_found(idx, series, file_path.to_owned())
+                            .await;
+
                         let mut file = std::fs::OpenOptions::new()
                             .read(true)
                             .write(true)

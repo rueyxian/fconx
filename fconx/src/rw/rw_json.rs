@@ -44,12 +44,13 @@ impl RWJson {
         Ok(())
     }
 
-    ///
-    pub(crate) fn push_episode(self: &std::sync::Arc<Self>, episode: Episode) -> Result<()> {
-        let file_path_mutex = self.file_path_map.get(&episode.series()).unwrap();
-        file_path_mutex.lock().push_episode(episode).unwrap();
-        Ok(())
-    }
+    // ///
+    // /// unused
+    // pub(crate) fn push_episode(self: &std::sync::Arc<Self>, episode: Episode) -> Result<()> {
+    //     let file_path_mutex = self.file_path_map.get(&episode.series()).unwrap();
+    //     file_path_mutex.lock().push_episode(episode).unwrap();
+    //     Ok(())
+    // }
 
     ///
     pub(crate) fn read_all_episodes(
@@ -61,27 +62,28 @@ impl RWJson {
         Ok(episodes)
     }
 
-    ///
-    pub(crate) fn read_episodes_no_sha1(
-        self: &std::sync::Arc<Self>,
-        series: &Series,
-    ) -> Result<Vec<Episode>> {
-        let all_episodes = self.read_all_episodes(series)?;
-        let no_sha1_episodes = all_episodes
-            .into_iter()
-            .filter(|episode| episode.sha1().is_none())
-            .collect::<Vec<Episode>>();
-        Ok(no_sha1_episodes)
-    }
+    // ///
+    // /// unused
+    // pub(crate) fn read_episodes_no_sha1(
+    //     self: &std::sync::Arc<Self>,
+    //     series: &Series,
+    // ) -> Result<Vec<Episode>> {
+    //     let all_episodes = self.read_all_episodes(series)?;
+    //     let no_sha1_episodes = all_episodes
+    //         .into_iter()
+    //         .filter(|episode| episode.sha1().is_none())
+    //         .collect::<Vec<Episode>>();
+    //     Ok(no_sha1_episodes)
+    // }
 
     ///
-    pub(crate) fn edit_episode(self: &std::sync::Arc<Self>, episode: Episode) -> Result<()> {
+    pub(crate) fn edit_episode(self: &std::sync::Arc<Self>, episode: &Episode) -> Result<()> {
         let series = episode.series();
         let all = self.read_all_episodes(&series).unwrap().into_iter();
         let mut filtered = all
             .filter(|ep| ep.id() != episode.id())
             .collect::<Vec<Episode>>();
-        filtered.push(episode);
+        filtered.push(episode.clone());
         self.overwrite_all_episodes(&series, filtered).unwrap();
         Ok(())
     }

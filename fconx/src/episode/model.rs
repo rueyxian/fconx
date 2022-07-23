@@ -4,7 +4,7 @@ use serde::Serialize;
 use crate::config::Series;
 
 ///
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug,Clone, Serialize, Deserialize)]
 pub struct Episode {
     id: String,
     sha1: Option<String>,

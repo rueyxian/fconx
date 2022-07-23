@@ -1,5 +1,6 @@
 use crate::config::Series;
 use crate::episode::Episode;
+use crate::logger::Logger;
 use crate::rw::RWJson;
 
 ///
@@ -7,6 +8,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 
 ///
 pub(crate) struct EpisodeScraper {
+    logger: std::sync::Arc<Logger>,
     series_vec: std::sync::Arc<Vec<Series>>,
     rw_json: std::sync::Arc<RWJson>,
 }
@@ -15,15 +17,19 @@ pub(crate) struct EpisodeScraper {
 impl EpisodeScraper {
     ///
     pub(crate) fn new(
+        logger: std::sync::Arc<Logger>,
         series_vec: std::sync::Arc<Vec<Series>>,
         rw_json: std::sync::Arc<RWJson>,
     ) -> EpisodeScraper {
         EpisodeScraper {
+            logger,
             series_vec,
             rw_json,
         }
     }
 
+
+    ///
     pub(crate) async fn run(&self) -> Result<()> {
         self.scrape_and_write_episodes().await?;
         Ok(())
@@ -34,6 +40,7 @@ impl EpisodeScraper {
         let mut handles =
             Vec::<tokio::task::JoinHandle<Result<()>>>::with_capacity(self.series_vec.len());
         for &series in self.series_vec.iter() {
+            let logger = self.logger.arc_clone();
             let rw_json = self.rw_json.arc_clone();
             let h = tokio::spawn(async move {
                 let mut from_json = rw_json.read_all_episodes(&series).unwrap();
@@ -46,6 +53,7 @@ impl EpisodeScraper {
                         })
                         .collect::<Vec<Episode>>()
                 };
+                logger.log_new_episodes(series, &new).await;
                 from_json.append(&mut new);
                 rw_json.overwrite_all_episodes(&series, from_json)?;
                 Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
@@ -63,7 +71,7 @@ impl EpisodeScraper {
         let browser = {
             let opts = headless_chrome::LaunchOptionsBuilder::default()
                 // .headless(false)
-                .idle_browser_timeout(std::time::Duration::from_millis(10_000))
+                .idle_browser_timeout(std::time::Duration::from_millis(8_000))
                 .build()?;
             headless_chrome::Browser::new(opts)?
         };

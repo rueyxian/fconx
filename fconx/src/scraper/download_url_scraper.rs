@@ -1,5 +1,7 @@
+use crate::canceller::Canceller;
 use crate::config::Series;
 use crate::episode::Episode;
+use crate::logger::Logger;
 use crate::rw::RWJson;
 
 ///
@@ -7,28 +9,36 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 
 ///
 pub(crate) struct DownloadUrlScraper {
-    //
-    max_worker: usize,
+    logger: std::sync::Arc<Logger>,
+    canceller: std::sync::Arc<Canceller>,
+    thread_max: usize,
     series_vec: std::sync::Arc<Vec<Series>>,
     rw_json: std::sync::Arc<RWJson>,
 }
 
+///
 impl DownloadUrlScraper {
     ///
     pub(crate) fn new(
-        max_worker: usize,
+        logger: std::sync::Arc<Logger>,
+        canceller: std::sync::Arc<Canceller>,
+        thread_max: usize,
         series_vec: std::sync::Arc<Vec<Series>>,
         rw_json: std::sync::Arc<RWJson>,
     ) -> DownloadUrlScraper {
         DownloadUrlScraper {
-            max_worker,
+            logger,
+            canceller,
+            thread_max,
             series_vec,
             rw_json,
         }
     }
 
+    ///
     pub(crate) async fn run(&self) -> Result<()> {
         let no_download_url_episodes = self.no_download_url_episodes().await?;
+        self.logger.log_to_scrape(&no_download_url_episodes).await;
         self.scrape_and_write_download_urls(no_download_url_episodes)
             .await?;
         Ok(())
@@ -78,36 +88,41 @@ impl DownloadUrlScraper {
         // TODO parking_lot::Mutex or tokio::sync::Mutex?????
         let episodes_count = episodes.len();
         let episodes_mutex = std::sync::Arc::new(tokio::sync::Mutex::new(episodes));
-        let mut handles_out = Vec::<tokio::task::JoinHandle<()>>::with_capacity(self.max_worker);
+        let mut handles_out = Vec::<tokio::task::JoinHandle<()>>::with_capacity(self.thread_max);
 
-        for _ in 0..usize::min(self.max_worker, episodes_count) {
+        for idx in 0..usize::min(self.thread_max, episodes_count) {
+            let logger = self.logger.arc_clone();
+            let canceller = self.canceller.arc_clone();
             let episodes_mutex = std::sync::Arc::clone(&episodes_mutex);
             let rw_json = self.rw_json.arc_clone();
             let h = tokio::spawn(async move {
                 loop {
-                    let episode = {
-                        episodes_mutex.lock().await.pop() // drop the guard immediately
-                    };
-                    if let Some(mut episode) = episode {
-                        if let Err(err) =
-                            DownloadUrlScraper::scrape_download_url(&mut episode).await
-                        {
-                            println!(
-                                "SCRAPE ERROR: {:?} {} {:?}: {:?}",
-                                episode.series(),
-                                episode.number(),
-                                episode.title(),
-                                err,
-                            );
-                            continue;
-                        }
-
-                        // rw_json.push_episode(episode).unwrap();
-                        rw_json.edit_episode(episode).unwrap();
-                    } else {
+                    if canceller.is_cancel() {
                         break;
                     }
+                    let mut episode = {
+                        let mut episodes_guard = episodes_mutex.lock().await;
+                        let episode = episodes_guard.pop();
+                        drop(episodes_guard); // drop the guard immediately
+                        match episode {
+                            Some(episode) => episode,
+                            None => break,
+                        }
+                    };
+
+                    logger.log_scrape_download_url_start(idx, &episode).await;
+
+                    let maybe_err = DownloadUrlScraper::scrape_download_url(&mut episode).await;
+
+                    if let Err(err) = maybe_err {
+                        logger.log_scrape_download_url_error(idx, &episode).await;
+                        continue;
+                    }
+
+                    rw_json.edit_episode(&episode).unwrap();
+                    logger.log_scrape_download_url_done(idx, &episode).await;
                 }
+                logger.log_scrape_download_url_thread_kill(idx).await;
             });
             handles_out.push(h);
         }
@@ -121,18 +136,17 @@ impl DownloadUrlScraper {
 
     ///
     async fn scrape_download_url(episode: &mut Episode) -> Result<()> {
-        let browser = headless_chrome::Browser::default()?;
+        let browser = {
+            let opts = headless_chrome::LaunchOptionsBuilder::default()
+                // .headless(false)
+                .idle_browser_timeout(std::time::Duration::from_millis(8_000))
+                .build()?;
+            headless_chrome::Browser::new(opts)?
+        };
 
         let tab = browser.wait_for_initial_tab()?;
 
         tab.navigate_to(episode.page_url())?;
-
-        println!(
-            "scraping: {:?} {} {}",
-            episode.series(),
-            episode.number(),
-            episode.page_url()
-        );
 
         fn try_truncate_url(url: &str) -> Option<String> {
             let idx = url.find(".mp3")?;
