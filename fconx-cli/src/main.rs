@@ -6,12 +6,13 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 async fn main() -> Result<()> {
     let (fconx, log_recv, canceller) = fconx::Fconx::new();
 
-    cancel_handler(canceller);
+    cancel_handler(canceller.clone());
     log_handler(log_recv);
     run(fconx).await?;
 
     println!("bye~");
-    Ok(())
+    std::process::exit(0);
+    // Ok(())
 }
 
 ///
@@ -45,6 +46,23 @@ fn log_handler(log_recv: flume::Receiver<fconx::Log>) {
     tokio::spawn(async move {
         while let Ok(recv) = log_recv.recv() {
             match recv {
+                //
+                Log::ScrapeEpisodesStart { idx, series } => {
+                    println!("{:02} start scrape episodes: {:?}", idx, series,);
+                }
+
+                //
+                Log::ScrapeEpisodesError { idx, series } => {
+                    println!("{:02} SCRAPE ERROR: {:?}", idx, series);
+                }
+
+                //
+                Log::ScrapeEpisodesThreadKill { idx }  => {
+                    println!("{:02} thread kill", idx);
+                }
+
+                // ========================
+
                 //
                 Log::NewEpisodes { series, episodes } => {
                     println!("found {} new episodes in {:?}", episodes.len(), series);

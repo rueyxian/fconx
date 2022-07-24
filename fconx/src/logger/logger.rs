@@ -36,6 +36,31 @@ impl Logger {
     // ========================
 
     ///
+    pub(crate) async fn log_scrape_episode_start(
+        self: &std::sync::Arc<Logger>,
+        idx: usize,
+        series: Series,
+    ) {
+        self.log(Log::ScrapeEpisodesStart { idx, series }).await;
+    }
+
+    ///
+    pub(crate) async fn log_scrape_episode_error(
+        self: &std::sync::Arc<Logger>,
+        idx: usize,
+        series: Series,
+    ) {
+        self.log(Log::ScrapeEpisodesError { idx, series }).await;
+    }
+
+    ///
+    pub(crate) async fn log_scrape_episode_thread_kill(self: &std::sync::Arc<Logger>, idx: usize) {
+        self.log(Log::ScrapeEpisodesThreadKill { idx }).await;
+    }
+
+    // ========================
+
+    ///
     pub(crate) async fn log_new_episodes(
         self: &std::sync::Arc<Logger>,
         series: Series,

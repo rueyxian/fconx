@@ -1,5 +1,6 @@
 use crate::canceller::Canceller;
 use crate::config::Series;
+use crate::downloader::error::DownloadError;
 use crate::episode::Episode;
 use crate::hasher::Sha1Hasher;
 use crate::logger::Logger;
@@ -158,7 +159,7 @@ impl Downloader {
                     logger.log_download_start(idx, &episode).await;
                     let bytes = match Downloader::download_mp3(&episode).await {
                         Ok(b) => b,
-                        Err(err) => {
+                        Err(_err) => {
                             // TODO log err
                             logger.log_download_error(idx, &episode).await;
                             continue;
@@ -181,11 +182,35 @@ impl Downloader {
         Ok(())
     }
 
+    // ///
+    // async fn download_mp3(episode: &Episode) -> Result<bytes::Bytes> {
+    //     // TODO: propagate error instead
+    //
+    //     let download_url = episode
+    //         .download_url()
+    //         .ok_or_else(|| ())
+    //         .map_err(|_| Box::new(error::DownloadError::MissingDownloadUrl(episode.clone())))?;
+    //
+    //     let bytes = {
+    //         let response = reqwest::get(download_url).await?;
+    //         response.bytes().await.unwrap()
+    //     };
+    //     Ok(bytes)
+    // }
+
     ///
-    async fn download_mp3(episode: &Episode) -> Result<bytes::Bytes> {
-        let download_url = episode.download_url().unwrap();
+    async fn download_mp3(episode: &Episode) -> std::result::Result<bytes::Bytes, DownloadError> {
+        // TODO: propagate error instead
+
+        let download_url = episode
+            .download_url()
+            .ok_or_else(|| ())
+            .map_err(|_| DownloadError::MissingDownloadUrl(episode.clone()))?;
+
         let bytes = {
-            let response = reqwest::get(download_url).await.unwrap();
+            let response = reqwest::get(&download_url)
+                .await
+                .map_err(|_| DownloadError::GetRequest(download_url))?;
             response.bytes().await.unwrap()
         };
         Ok(bytes)

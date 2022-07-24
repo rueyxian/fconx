@@ -48,12 +48,12 @@ impl Config {
         let config_model = Config::read_config_file();
 
         let data_dir_path = {
-            let path = config_model.dir_path.as_path().join(".data");
+            let path = config_model.dir_path.as_path().join(Config::DATA_DIRNAME);
             std::sync::Arc::new(path)
         };
 
         let temp_dir_path = {
-            let path = config_model.dir_path.as_path().join(".temp");
+            let path = config_model.dir_path.as_path().join(Config::TEMP_DIRNAME);
             std::sync::Arc::new(path)
         };
 
@@ -91,10 +91,10 @@ impl Config {
         self
     }
 
-    ///
-    pub(crate) fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<Config> {
-        std::sync::Arc::clone(self)
-    }
+    // ///
+    // pub(crate) fn arc_clone(self: &std::sync::Arc<Self>) -> std::sync::Arc<Config> {
+    //     std::sync::Arc::clone(self)
+    // }
 
     ///
     pub(crate) fn dir_path(self: &std::sync::Arc<Self>) -> std::sync::Arc<std::path::PathBuf> {

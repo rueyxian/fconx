@@ -5,6 +5,16 @@ use crate::episode::Episode;
 #[derive(Debug)]
 pub enum Log {
     ///
+    ScrapeEpisodesStart { idx: usize, series: Series },
+
+    ///
+    ScrapeEpisodesThreadKill { idx: usize },
+
+    ///
+    ScrapeEpisodesError { idx: usize, series: Series },
+
+    // ========================
+    ///
     NewEpisodes {
         series: Series,
         episodes: Vec<Episode>,

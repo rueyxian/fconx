@@ -23,11 +23,11 @@ impl EpisodeScraper {
     ) -> EpisodeScraper {
         EpisodeScraper {
             logger,
+
             series_vec,
             rw_json,
         }
     }
-
 
     ///
     pub(crate) async fn run(&self) -> Result<()> {
@@ -39,13 +39,21 @@ impl EpisodeScraper {
     async fn scrape_and_write_episodes(&self) -> Result<()> {
         let mut handles =
             Vec::<tokio::task::JoinHandle<Result<()>>>::with_capacity(self.series_vec.len());
-        for &series in self.series_vec.iter() {
+        for (idx, &series) in self.series_vec.iter().enumerate() {
             let logger = self.logger.arc_clone();
             let rw_json = self.rw_json.arc_clone();
             let h = tokio::spawn(async move {
                 let mut from_json = rw_json.read_all_episodes(&series).unwrap();
                 let mut new = {
-                    let scraped = EpisodeScraper::scrape_episodes_by_series(series).await?;
+                    logger.log_scrape_episode_start(idx, series).await;
+                    let scraped = match EpisodeScraper::scrape_episodes_by_series(series).await {
+                        Ok(scraped) => scraped,
+                        Err(err) => {
+                            // TODO log err
+                            logger.log_scrape_episode_error(idx, series).await;
+                            return Err(err);
+                        }
+                    };
                     scraped
                         .into_iter()
                         .filter(|episode| {
@@ -56,11 +64,13 @@ impl EpisodeScraper {
                 logger.log_new_episodes(series, &new).await;
                 from_json.append(&mut new);
                 rw_json.overwrite_all_episodes(&series, from_json)?;
+                logger.log_scrape_episode_thread_kill(idx).await;
                 Ok::<(), Box<dyn std::error::Error + Send + Sync + 'static>>(())
             });
             handles.push(h);
         }
         for h in handles {
+            // TODO: log error instead of unwrap
             h.await.unwrap()?;
         }
         Ok(())
@@ -78,7 +88,7 @@ impl EpisodeScraper {
 
         let tab = browser.wait_for_initial_tab()?;
         tab.navigate_to(&series.url().to_string())?;
-        let elems = tab.wait_for_elements(".archive_entry").unwrap();
+        let elems = tab.wait_for_elements(".archive_entry")?;
 
         let mut out = Vec::<Episode>::with_capacity(elems.len());
 

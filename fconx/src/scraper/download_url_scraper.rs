@@ -114,7 +114,8 @@ impl DownloadUrlScraper {
 
                     let maybe_err = DownloadUrlScraper::scrape_download_url(&mut episode).await;
 
-                    if let Err(err) = maybe_err {
+                    // TODO log err
+                    if let Err(_err) = maybe_err {
                         logger.log_scrape_download_url_error(idx, &episode).await;
                         continue;
                     }

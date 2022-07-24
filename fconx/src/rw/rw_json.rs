@@ -7,22 +7,22 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 
 ///
 pub(crate) struct RWJson {
-    file_path_map: std::collections::HashMap<Series, parking_lot::Mutex<FilePath>>,
+    rw_map: std::collections::HashMap<Series, parking_lot::Mutex<RW>>,
 }
 
 ///
 impl RWJson {
     ///
     pub(crate) fn new_arc(config: &std::sync::Arc<Config>) -> std::sync::Arc<RWJson> {
-        let mut file_path_map = std::collections::HashMap::with_capacity(config.series_vec().len());
+        let mut rw_map = std::collections::HashMap::with_capacity(config.series_vec().len());
         for &series in config.series_vec().iter() {
-            let file_path_mutex = {
-                let file_path = FilePath::new(series, config.data_dir_path().as_path());
+            let rw_mutex = {
+                let file_path = RW::new(series, config.data_dir_path().as_path());
                 parking_lot::Mutex::new(file_path)
             };
-            file_path_map.insert(series, file_path_mutex);
+            rw_map.insert(series, rw_mutex);
         }
-        std::sync::Arc::new(RWJson { file_path_map })
+        std::sync::Arc::new(RWJson { rw_map })
     }
 
     ///
@@ -36,11 +36,8 @@ impl RWJson {
         series: &Series,
         episodes: Vec<Episode>,
     ) -> Result<()> {
-        let file_path_mutex = self.file_path_map.get(series).unwrap();
-        file_path_mutex
-            .lock()
-            .overwrite_all_episodes(episodes)
-            .unwrap();
+        let rw_guard = self.rw_map.get(series).unwrap().lock();
+        rw_guard.overwrite_all_episodes(episodes).unwrap();
         Ok(())
     }
 
@@ -57,8 +54,8 @@ impl RWJson {
         self: &std::sync::Arc<Self>,
         series: &Series,
     ) -> Result<Vec<Episode>> {
-        let file_path_mutex = self.file_path_map.get(series).unwrap();
-        let episodes = file_path_mutex.lock().read_all_episodes().unwrap();
+        let rw_guard = self.rw_map.get(series).unwrap().lock();
+        let episodes = rw_guard.read_all_episodes().unwrap();
         Ok(episodes)
     }
 
@@ -78,28 +75,23 @@ impl RWJson {
 
     ///
     pub(crate) fn edit_episode(self: &std::sync::Arc<Self>, episode: &Episode) -> Result<()> {
-        let series = episode.series();
-        let all = self.read_all_episodes(&series).unwrap().into_iter();
-        let mut filtered = all
-            .filter(|ep| ep.id() != episode.id())
-            .collect::<Vec<Episode>>();
-        filtered.push(episode.clone());
-        self.overwrite_all_episodes(&series, filtered).unwrap();
+        let rw_guard = self.rw_map.get(&episode.series()).unwrap().lock();
+        rw_guard.edit_episode(episode.clone())?;
         Ok(())
     }
 }
 
 ///
-struct FilePath {
+struct RW {
     file_path: std::path::PathBuf,
 }
 
 ///
-impl FilePath {
+impl RW {
     ///
-    fn new(series: Series, dir_path: &std::path::Path) -> FilePath {
+    fn new(series: Series, dir_path: &std::path::Path) -> RW {
         let file_path = dir_path.join(series.data_json_filename());
-        FilePath { file_path }
+        RW { file_path }
     }
 
     ///
@@ -121,13 +113,14 @@ impl FilePath {
         Ok(())
     }
 
-    ///
-    fn push_episode(&self, episode: Episode) -> Result<()> {
-        let mut episodes = self.read_all_episodes().unwrap();
-        episodes.push(episode);
-        self.overwrite_all_episodes(episodes).unwrap();
-        Ok(())
-    }
+    // ///
+    // /// unused
+    // fn push_episode(&self, episode: Episode) -> Result<()> {
+    //     let mut episodes = self.read_all_episodes().unwrap();
+    //     episodes.push(episode);
+    //     self.overwrite_all_episodes(episodes).unwrap();
+    //     Ok(())
+    // }
 
     ///
     fn read_all_episodes(&self) -> Result<Vec<Episode>> {
@@ -141,5 +134,15 @@ impl FilePath {
         let mut reader = std::io::BufReader::new(file);
         let episodes: Vec<Episode> = serde_json::from_reader(&mut reader).unwrap_or(vec![]);
         Ok(episodes)
+    }
+
+    fn edit_episode(&self, episode: Episode) -> Result<()> {
+        let all = self.read_all_episodes().unwrap().into_iter();
+        let mut filtered = all
+            .filter(|ep| ep.id() != episode.id())
+            .collect::<Vec<Episode>>();
+        filtered.push(episode.clone());
+        self.overwrite_all_episodes(filtered).unwrap();
+        Ok(())
     }
 }

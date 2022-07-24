@@ -131,11 +131,15 @@ impl RWMp3 {
 
         for idx in 0..usize::min(self.thread_max, file_count) {
             let logger = self.logger.arc_clone();
+            let canceller = self.canceller.arc_clone();
             let file_paths_mutex = std::sync::Arc::clone(&file_paths_mutex);
             let out_mutex = std::sync::Arc::clone(&out_mutex);
             let h = tokio::spawn(async move {
                 let mut hasher = Sha1Hasher::new();
                 loop {
+                    if canceller.is_cancel() {
+                        break;
+                    }
                     let file_path = {
                         file_paths_mutex.lock().pop() // drop the guard immediately
                     };

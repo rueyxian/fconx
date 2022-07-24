@@ -29,9 +29,14 @@ impl Fconx {
 
         let canceller = Canceller::new();
 
-        let config = Config::new_arc();
+        let config = Config::new_arc().create_dirs();
         let rw_json = RWJson::new_arc(&config);
-        let rw_mp3 = RWMp3::new_arc(logger.arc_clone(), canceller.arc_clone(), &config, 64);
+        let rw_mp3 = RWMp3::new_arc(
+            logger.arc_clone(),
+            canceller.arc_clone(),
+            &config,
+            config.series_vec().len() * 2,
+        );
 
         let episode_scraper =
             EpisodeScraper::new(logger.arc_clone(), config.series_vec(), rw_json.arc_clone());
@@ -39,7 +44,7 @@ impl Fconx {
         let download_url_scraper = DownloadUrlScraper::new(
             logger.arc_clone(),
             canceller.arc_clone(),
-            num_cpus::get(),
+            num_cpus::get_physical(),
             config.series_vec(),
             rw_json.arc_clone(),
         );
@@ -47,7 +52,7 @@ impl Fconx {
         let downloader = Downloader::new(
             logger.arc_clone(),
             canceller.arc_clone(),
-            8,
+            4,
             config.series_vec(),
             rw_json.arc_clone(),
             rw_mp3.arc_clone(),
